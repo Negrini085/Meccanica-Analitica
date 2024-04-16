@@ -1,4 +1,4 @@
-import std/random
+import std/[random, streams]
 import strutils
 import math
 
@@ -79,11 +79,58 @@ proc metropolisMove(modello: var Ising, beta: float32): void =
             modello.energia = modello.energia + en2 - en1
 
 
+
+# Procedura per resettare il modello ad una configurazione completamente casuale
+proc resetModel(modello: var Ising): void =
+    # Inizializzo tutti gli spin ad uno
+    for i in 0..<len(modello.spins):
+        modello.spins[i] = 1
+    # Effettuo le permutazioni necessarie    
+    for i in 0..<3*len(modello.spins):
+        modello.spins[rand(len(modello.spins)-1)] = -1 + 2 * rand(1)
+
+    modello.energia = 0
+    for i in 0..<len(modello.spins):
+        # Devo fare attenzione all'ultima iterazione, in quanto vogliamo che vengano applicate delle boundaries conditions per
+        # far sì che i risultati siano confrontabili con quelli che si ottengono nel limite termodinamico, ossia per numero di 
+        # particelle facenti parte del sistema in analisi tendente ad infinito.
+        modello.energia = modello.energia - modello.J * float32(modello.spins[pbc(i, len(modello.spins))] * modello.spins[pbc(i+1, len(modello.spins))]) - 0.5 * modello.h * float32((modello.spins[pbc(i, len(modello.spins))] + modello.spins[pbc(i+1, len(modello.spins))]))
+
+
+
+# Procedura per la termalizzazione del sistema: provo a fare un numero nmove di mosse Metropolis, plottando dopo ciascuna
+# il valore dell'energia del sistema, in modo tale da valutare dopo quanto sono in una configurazione stabile e di conseguenza
+# quando posso effettuare la presa dati
+proc termModel(modello: var Ising, ofstream: var Stream, fname: string, beta: float32, nmove: int): void =
+
+    ofstream = newFileStream(fname, fmWrite)
+
+    # Effettuo il numero di mosse scelte
+    for i in 0..<nmove:
+        modello.metropolisMove(beta)
+        ofstream.write(modello.energia)
+        ofstream.write('\n')
+
+    modello.resetModel()
+    ofstream.close()
+
+    
+
 var
     modello: Ising = newIsing(1.0, 0.0)
-    beta: float32 = 2
+    beta: array[16, float32]
+    ofstream: Stream
 
-for i in 0..<300:
-    modello.metropolisMove(beta)
+# Genero tutti i valori di beta richiesti, corrispondenti alle varie temperature con le quali voglio andare a lavorare
+for i in 0..<len(beta):
+    beta[i] = float32(0.5 + 0.1 * float(i)) 
 
-echo modello
+for j in 0..<len(beta):
+    for i in 0..<400 * len(modello.spins):
+        modello.metropolisMove(beta[j])
+
+    echo modello.energia/100
+    modello.resetModel()
+
+
+modello.termModel(ofstream, "prova.dat", 2.0, 1000)
